@@ -45,25 +45,29 @@ def forward_euler(states: list[State], dt: float) -> State:
     state = State(last.time + dt, bodies)
     return state
 
+def accel(bodies: list[Body], index: int) -> np.array:
+    this = bodies[index]
+    force = np.array([0.0, 0.0])
+    for other in bodies:
+        if other is not this:
+            force += G * this.m * other.m * (other.r - this.r) / np.linalg.norm(other.r - this.r) ** 3.0
+    accel = force / this.m
+    return accel
+
 def ab3(states: list[State], dt: float) -> State:
     last = states[-1]
     second_last = states[-2]
     third_last = states[-3]
 
     bodies = []
+    for i in range(len(last.bodies)):
+        this = last.bodies[i]
+        second = second_last.bodies[i]
+        third = third_last.bodies[i]
 
-    for this, prev1, prev2, prev3 in zip(last.bodies, second_last.bodies, third_last.bodies, states[-4].bodies):
-        predicted_r = this.r + (23/12 * (this.v - prev1.v) - 4/3 * (prev1.v - prev2.v) + 5/12 * (prev2.v - prev3.v)) * dt
-
-        force = np.array([0.0, 0.0])
-        for other in last.bodies:
-            if other is not this:
-                force += G * this.m * other.m * (other.r - predicted_r) / np.linalg.norm(other.r - predicted_r)**3.0
-        accel = force / this.m
-
-        v = this.v + accel * dt
-        r = predicted_r + this.v * dt
-        bodies.append(Body(r, v, this.m))
+        predicted_r = this.r + dt * (23/12 * this.v - 4/3 * second.v + 5/12 * third.v)
+        predicted_v = this.v + dt * (23/12 * accel(last.bodies, i) - 4/3 * accel(second_last.bodies, i) + 5/12 * accel(third_last.bodies, i))
+        bodies.append(Body(predicted_r, predicted_v, this.m))
 
     state = State(last.time + dt, bodies)
     return state
@@ -81,13 +85,13 @@ def main():
     delta_t = DAY / 4
 
     states = [initial]
-    for _ in range(3):
+    for _ in range(2):
         next = forward_euler(states, delta_t)
         states.append(next)
         xs.append(next.time * YEAR / SECOND)
         ys.append(next.bodies[1].r[0])
 
-    for _ in range(3, 1000 * 4):
+    for _ in range(2, 1000 * 4):
         next = ab3(states, delta_t)
         states.append(next)
         xs.append(next.time * YEAR / SECOND)
