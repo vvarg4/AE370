@@ -27,23 +27,6 @@ class State:
     time: float
     bodies: list[Body]
 
-def forward_euler(states: list[State], dt: float) -> State:
-    last = states[-1]
-
-    bodies = []
-    for this in last.bodies:
-        force = np.array([0.0, 0.0])
-        for other in last.bodies:
-            if other is not this:
-                force += G * this.m * other.m * (other.r - this.r) / np.linalg.norm(other.r - this.r)**3.0
-        accel = force / this.m
-
-        v = this.v + accel * dt
-        r = this.r + this.v * dt
-        bodies.append(Body(r, v, this.m))
-
-    state = State(last.time + dt, bodies)
-    return state
 
 def accel(bodies: list[Body], index: int) -> np.array:
     this = bodies[index]
@@ -53,6 +36,20 @@ def accel(bodies: list[Body], index: int) -> np.array:
             force += G * this.m * other.m * (other.r - this.r) / np.linalg.norm(other.r - this.r) ** 3.0
     accel = force / this.m
     return accel
+
+def forward_euler(states: list[State], dt: float) -> State:
+    last = states[-1]
+
+    bodies = []
+    for i in range(len(last.bodies)):
+        this = last.bodies[i]
+
+        v = this.v + accel(last.bodies, i) * dt
+        r = this.r + this.v * dt
+        bodies.append(Body(r, v, this.m))
+
+    state = State(last.time + dt, bodies)
+    return state
 
 def ab3(states: list[State], dt: float) -> State:
     last = states[-1]
@@ -72,6 +69,32 @@ def ab3(states: list[State], dt: float) -> State:
     state = State(last.time + dt, bodies)
     return state
 
+def rk4(states: list[State], dt: float) -> State:
+    last = states[-1]
+
+    bodies = []
+    for i in range(len(last.bodies)):
+        this = last.bodies[i]
+
+        k1v = accel(last.bodies, i)
+        k1r = this.v
+        
+        k2v = accel([Body(this.r + k1r * (dt / 2), this.v + k1v * (dt / 2), this.m) for this in last.bodies], i)
+        k2r = this.v + k1v * (dt / 2)
+
+        k3v = accel([Body(this.r + k2r * (dt / 2), this.v + k2v * (dt / 2), this.m) for this in last.bodies], i)
+        k3r = this.v + k2v * (dt / 2)
+
+        k4v = accel([Body(this.r + k3r * dt, this.v + k3v * dt, this.m) for this in last.bodies], i)
+        k4r = this.v + k3v * dt
+
+        predicted_v = this.v + (dt/6) * (k1v + 2 * k2v + 2 * k3v + k4v)
+        predicted_r = this.r + (dt/6) * (k1r + 2 * k2r + 2 * k3r + k4r)
+        bodies.append(Body(predicted_r, predicted_v, this.m))
+    
+    state = State(last.time + dt, bodies)
+    return state
+
 
 def main():
     initial = State(0.0, [
@@ -85,17 +108,27 @@ def main():
     delta_t = DAY / 4
 
     states = [initial]
-    for _ in range(2):
-        next = forward_euler(states, delta_t)
+    # for _ in range(2):
+    #     next = forward_euler(states, delta_t)
+    #     states.append(next)
+    #     xs.append(next.time * YEAR / SECOND)
+    #     ys.append(next.bodies[1].r[0])
+
+    # for _ in range(2, 1000 * 4):
+    #     next = ab3(states, delta_t)
+    #     states.append(next)
+    #     xs.append(next.time * YEAR / SECOND)
+    #     ys.append(next.bodies[1].r[0])
+
+    for _ in range(1000 * 4):
+        next = rk4(states, delta_t)
         states.append(next)
         xs.append(next.time * YEAR / SECOND)
         ys.append(next.bodies[1].r[0])
 
-    for _ in range(2, 1000 * 4):
-        next = ab3(states, delta_t)
-        states.append(next)
-        xs.append(next.time * YEAR / SECOND)
-        ys.append(next.bodies[1].r[0])
+    print(np.max(ys))
+
+
 
     plt.plot(xs, ys)
     plt.title("Earth-Sun System")
