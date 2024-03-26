@@ -90,10 +90,39 @@ def rk4(states: list[State], dt: float) -> State:
 
         predicted_v = this.v + (dt/6) * (k1v + 2 * k2v + 2 * k3v + k4v)
         predicted_r = this.r + (dt/6) * (k1r + 2 * k2r + 2 * k3r + k4r)
+
         bodies.append(Body(predicted_r, predicted_v, this.m))
     
     state = State(last.time + dt, bodies)
     return state
+
+def ivp_rk4(states: list[State], T: float, dt: float) -> tuple[np.array, np.array]:
+    last = states[-1]
+
+    num_steps = int(T/dt) + 1
+
+    times = np.linspace(0, T, num_steps)
+    positions = np.array([body.r for body in last.bodies]).reshape(1,len(last.bodies) * len(last.bodies[-1].r))
+
+    for i in range(num_steps - 1):
+        next_state = rk4(states, dt)
+        states.append(next_state)
+        
+        bodies_positions = next_state.bodies[0].r
+        for i in range(1, len(next_state.bodies)):
+            bodies_positions = np.block([[bodies_positions, next_state.bodies[i].r]])
+        positions = np.block([[positions], [bodies_positions]])
+    
+    return positions, times
+
+def rk4_error(states: list[State], T: float, dt: float, dt_baseline: float) -> float:
+    
+    positions, _ = ivp_rk4(states, T, dt)
+    positions_baselines, _ = ivp_rk4(states, T, dt_baseline)
+
+    err = np.linalg.norm(positions[-1] - positions_baselines[-1])/np.linalg.norm(positions_baselines[-1])
+    
+    return err
 
 
 def main():
@@ -105,35 +134,51 @@ def main():
     xs = []
     ys = []
 
-    delta_t = DAY / 4
+    dt = DAY / 4
 
     states = [initial]
+    ## plot ab3
     # for _ in range(2):
-    #     next = forward_euler(states, delta_t)
+    #     next = forward_euler(states, dt)
     #     states.append(next)
     #     xs.append(next.time * YEAR / SECOND)
     #     ys.append(next.bodies[1].r[0])
 
     # for _ in range(2, 1000 * 4):
-    #     next = ab3(states, delta_t)
+    #     next = ab3(states, dt)
     #     states.append(next)
     #     xs.append(next.time * YEAR / SECOND)
     #     ys.append(next.bodies[1].r[0])
 
-    for _ in range(1000 * 4):
-        next = rk4(states, delta_t)
-        states.append(next)
-        xs.append(next.time * YEAR / SECOND)
-        ys.append(next.bodies[1].r[0])
+    ## plot rk4
+    # for _ in range(1000 * 4):
+    #     next = rk4(states, dt)
+    #     states.append(next)
+    #     xs.append(next.time * YEAR / SECOND)
+    #     ys.append(next.bodies[1].r[0])
 
-    print(np.max(ys))
+    T = 1000 * dt
 
+    dt_list = [5e-2, 2.5e-2, 1e-2, 5e-3, 2.5e-3, 1e-3, 5e-4]
 
+    dt_baseline = 2.5e-4
 
-    plt.plot(xs, ys)
-    plt.title("Earth-Sun System")
-    plt.xlabel("Year")
-    plt.ylabel("X-position of Earth")
+    T_baseline = dt_baseline * 1000
+    err_list = []
+    for dt in dt_list:
+        err = rk4_error(states, T_baseline, dt, dt_baseline)
+        err_list.append(err)
+
+    # plt.plot(xs,  ys)
+    # plt.title("Earth-Sun System")
+    # plt.xlabel("Year")
+    # plt.ylabel("Y-position of Earth")
+    # plt.show()
+
+    plt.loglog(dt_list,  err_list)
+    plt.title("Error Convergence")
+    plt.xlabel("dt")
+    plt.ylabel("error")
     plt.show()
 
 
