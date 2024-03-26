@@ -13,7 +13,7 @@ SECOND = 1
 MINUTE = SECOND * 60
 HOUR  = MINUTE * 60
 DAY = HOUR * 24
-YEAR = DAY * 7
+YEAR = DAY * 365.2422
 
 
 @dataclass
@@ -69,6 +69,29 @@ def ab3(states: list[State], dt: float) -> State:
     state = State(last.time + dt, bodies)
     return state
 
+def ab4(states: list[State], dt: float) -> State:
+    last = states[-1]
+    second_last = states[-2]
+    third_last = states[-3]
+    fourth_last = states[-4]
+
+    bodies = []
+    for i in range(len(last.bodies)):
+        this = last.bodies[i]
+        second = second_last.bodies[i]
+        third = third_last.bodies[i]
+        fourth = fourth_last.bodies[i]
+
+        predicted_r = this.r + dt * (55/24 * this.v - 59/24 * second.v + 37/24 * third.v - 9/24 * fourth.v)
+        predicted_v = this.v + dt * (55/24 * accel(last.bodies, i) - 
+                                        59/24 * accel(second_last.bodies, i) + 
+                                        37/24 * accel(third_last.bodies, i) - 
+                                        9/24 * accel(fourth_last.bodies, i))
+        bodies.append(Body(predicted_r, predicted_v, this.m))
+
+    state = State(last.time + dt, bodies)
+    return state
+
 def rk4(states: list[State], dt: float) -> State:
     last = states[-1]
 
@@ -79,11 +102,11 @@ def rk4(states: list[State], dt: float) -> State:
         k1v = accel(last.bodies, i)
         k1r = this.v
         
-        k2v = accel([Body(this.r + k1r * (dt / 2), this.v + k1v * (dt / 2), this.m) for this in last.bodies], i)
-        k2r = this.v + k1v * (dt / 2)
+        k2v = accel([Body(this.r + k1r * (dt/2), this.v + k1v * (dt/2), this.m) for this in last.bodies], i)
+        k2r = this.v + k1v * (dt/2)
 
-        k3v = accel([Body(this.r + k2r * (dt / 2), this.v + k2v * (dt / 2), this.m) for this in last.bodies], i)
-        k3r = this.v + k2v * (dt / 2)
+        k3v = accel([Body(this.r + k2r * (dt/2), this.v + k2v * (dt/2), this.m) for this in last.bodies], i)
+        k3r = this.v + k2v * (dt/2)
 
         k4v = accel([Body(this.r + k3r * dt, this.v + k3v * dt, this.m) for this in last.bodies], i)
         k4r = this.v + k3v * dt
@@ -98,18 +121,18 @@ def rk4(states: list[State], dt: float) -> State:
 
 def ivp_rk4(states: list[State], T: float, dt: float) -> tuple[np.array, np.array]:
     last = states[-1]
-
+    N = len(last.bodies)
     num_steps = int(T/dt) + 1
 
     times = np.linspace(0, T, num_steps)
-    positions = np.array([body.r for body in last.bodies]).reshape(1,len(last.bodies) * len(last.bodies[-1].r))
+    positions = np.array([body.r for body in last.bodies]).reshape(1, N * len(last.bodies[-1].r))
 
     for i in range(num_steps - 1):
         next_state = rk4(states, dt)
         states.append(next_state)
         
         bodies_positions = next_state.bodies[0].r
-        for i in range(1, len(next_state.bodies)):
+        for i in range(1, N):
             bodies_positions = np.block([[bodies_positions, next_state.bodies[i].r]])
         positions = np.block([[positions], [bodies_positions]])
     
@@ -124,6 +147,34 @@ def rk4_error(states: list[State], T: float, dt: float, dt_baseline: float) -> f
     
     return err
 
+def ivp_ab4(states: list[State], T: float, dt: float) -> tuple[np.array, np.array]:
+    last = states[-1]
+
+    N = len(last.bodies)
+    num_steps = int(T/dt) + 1
+
+    times = np.linspace(0, T, num_steps)
+    positions = np.array([body.r for body in last.bodies]).reshape(1, N * len(last.bodies[-1].r))
+
+    for i in range(num_steps - 1):
+        next_state = ab4(states, dt)
+        states.append(next_state)
+        
+        bodies_positions = next_state.bodies[0].r
+        for i in range(1, N):
+            bodies_positions = np.block([[bodies_positions, next_state.bodies[i].r]])
+        positions = np.block([[positions], [bodies_positions]])
+    
+    return positions, times
+
+def ab4_error(states: list[State], T: float, dt: float, dt_baseline: float) -> float:
+    
+    positions, _ = ivp_ab4(states, T, dt)
+    positions_baselines, _ = ivp_ab4(states, T, dt_baseline)
+
+    err = np.linalg.norm(positions[-1] - positions_baselines[-1])/np.linalg.norm(positions_baselines[-1])
+    
+    return err
 
 def main():
     initial = State(0.0, [
@@ -134,21 +185,19 @@ def main():
     xs = []
     ys = []
 
-    dt = DAY / 4
-
     states = [initial]
-    ## plot ab3
-    # for _ in range(2):
+    # plot ab4
+    # for _ in range(3):
     #     next = forward_euler(states, dt)
     #     states.append(next)
-    #     xs.append(next.time * YEAR / SECOND)
-    #     ys.append(next.bodies[1].r[0])
+    #     xs.append(next.bodies[1].r[0])
+    #     ys.append(next.bodies[1].r[1])
 
-    # for _ in range(2, 1000 * 4):
-    #     next = ab3(states, dt)
+    # for _ in range(3, 1000 * 4):
+    #     next = ab4(states, dt)
     #     states.append(next)
-    #     xs.append(next.time * YEAR / SECOND)
-    #     ys.append(next.bodies[1].r[0])
+    #     xs.append(next.bodies[1].r[0])
+    #     ys.append(next.bodies[1].r[1])
 
     ## plot rk4
     # for _ in range(1000 * 4):
@@ -157,16 +206,19 @@ def main():
     #     xs.append(next.time * YEAR / SECOND)
     #     ys.append(next.bodies[1].r[0])
 
-    T = 1000 * dt
+    dt_list = [HOUR, HOUR * 12, DAY, DAY * 3, DAY * 7, DAY * 14]
+    dt_baseline = 30 * MINUTE
 
-    dt_list = [5e-2, 2.5e-2, 1e-2, 5e-3, 2.5e-3, 1e-3, 5e-4]
+    T_baseline = YEAR
 
-    dt_baseline = 2.5e-4
-
-    T_baseline = dt_baseline * 1000
     err_list = []
+
     for dt in dt_list:
-        err = rk4_error(states, T_baseline, dt, dt_baseline)
+        for _ in range(3):
+            next = forward_euler(states, dt)
+            states.append(next)
+
+        err = ab4_error(states, T_baseline, dt, dt_baseline)
         err_list.append(err)
 
     # plt.plot(xs,  ys)
@@ -175,7 +227,7 @@ def main():
     # plt.ylabel("Y-position of Earth")
     # plt.show()
 
-    plt.loglog(dt_list,  err_list)
+    plt.plot(dt_list,  err_list)
     plt.title("Error Convergence")
     plt.xlabel("dt")
     plt.ylabel("error")
