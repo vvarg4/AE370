@@ -9,6 +9,9 @@ MASS_EARTH = 5.972e24
 V_EARTH = 29.8e3
 R_EARTH = 149e9
 MASS_SUN = 1.989e30
+R_MOON = 384.4e6
+MASS_MOON = 7.348e22
+V_MOON = 1.022e3
 
 SECOND = 1
 MINUTE = SECOND * 60
@@ -145,39 +148,29 @@ def main():
     initial = State(0.0, [
         Body(np.array([0, 0.0]), np.array([0.0, 0.0]), MASS_SUN),
         Body(np.array([R_EARTH, 0.0]), np.array([0.0, V_EARTH]), MASS_EARTH),
+        Body(np.array([R_EARTH + R_MOON, 0.0]), np.array([0.0, V_EARTH + V_MOON]), MASS_MOON)
     ])
 
-    ## plot ab3
-    # for _ in range(2):
-    #     next = forward_euler(states, dt)
-    #     states.append(next)
-    #     xs.append(next.time * YEAR / SECOND)
-    #     ys.append(next.bodies[1].r[0])
-
-    # for _ in range(2, 1000 * 4):
-    #     next = ab3(states, dt)
-    #     states.append(next)
-    #     xs.append(next.time * YEAR / SECOND)
-    #     ys.append(next.bodies[1].r[0])
+    final_t = YEAR
+    baseline_dt = 30 * MINUTE
+    dt_list = np.array([HOUR, 12 * HOUR, DAY, DAY * 3, DAY * 7, DAY * 14])
 
     for name, (method, fe_steps) in {"ab3": (ab3, 2), "fe": (forward_euler, 0), "rk4": (rk4, 0)}.items():
-        baseline = ivp(initial, YEAR, 30 * MINUTE, method, festeps=fe_steps)
+        baseline = ivp(initial, final_t, baseline_dt, method, festeps=fe_steps)
 
-        dt_list = [HOUR, 6 * HOUR, 12 * HOUR, DAY]
         errs = []
         for dt in dt_list:
-            final = ivp(initial, YEAR, dt, method, festeps=fe_steps)
+            final = ivp(initial, final_t, dt, method, festeps=fe_steps)
 
-            err = np.linalg.norm(final.bodies[1].r - baseline.bodies[1].r)/np.linalg.norm(baseline.bodies[1].r)
+            err = np.linalg.norm(final.bodies[1].r - baseline.bodies[1].r) / np.linalg.norm(baseline.bodies[1].r)
             errs.append(err)
             print(f"{dt}: {err}")
 
-        plt.plot(np.array(dt_list), np.array(errs), label=name)
-    # plt.xscale("log")
-    # plt.scatter(xs, ys)
+        plt.plot(np.array(dt_list) / HOUR, np.array(errs), label=name)
+
     plt.legend()
     plt.title("Error Convergence")
-    plt.xlabel("dt")
+    plt.xlabel("dt (hours)")
     plt.ylabel("error")
     plt.show()
 
