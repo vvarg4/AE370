@@ -116,7 +116,7 @@ def ivp(initial: State, final_t: float, dt: float, method: Callable[[list[State]
     return states
 
 
-def test_convergence():
+def test_convergence_ab3():
     initial = State(0.0, [
         Body(np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0]), MASS_SUN),
         Body(np.array([R_EARTH, 0.0, 0.0]), np.array([0.0, V_EARTH, 0.0]), MASS_EARTH),
@@ -125,9 +125,9 @@ def test_convergence():
 
     final_t = YEAR
     baseline_dt = 30 * MINUTE
-    dt_list = np.array([HOUR, 12 * HOUR, DAY, DAY * 3, DAY * 7, DAY * 14])
+    dt_list = np.array([12 * HOUR, DAY, DAY * 7, DAY * 11,  DAY * 14])
 
-    for name, (method, fe_steps) in {"ab3": (ab3, 2), "ab4": (ab4, 3), "fe": (forward_euler, 0)}.items():
+    for name, (method, fe_steps) in {"ab3": (ab3, 2)}.items():
         baseline = ivp(initial, final_t, baseline_dt, method, festeps=fe_steps)
 
         errs = []
@@ -138,12 +138,42 @@ def test_convergence():
             errs.append(err)
         print(f"{name} done")
 
-        plt.plot(np.array(dt_list) / HOUR, np.array(errs), label=name)
+        plt.scatter(np.array(dt_list) / HOUR, np.array(errs)**(1/3), label=name)
 
     plt.legend()
     plt.title("Error Convergence")
     plt.xlabel("dt (hours)")
-    plt.ylabel("error")
+    plt.ylabel(r"$error^\frac{1}{3}$")
+    plt.show()
+
+def test_convergence_ab4():
+    initial = State(0.0, [
+        Body(np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0]), MASS_SUN),
+        Body(np.array([R_EARTH, 0.0, 0.0]), np.array([0.0, V_EARTH, 0.0]), MASS_EARTH),
+        Body(np.array([R_EARTH + R_MOON, 0.0, 0.0]), np.array([0.0, V_EARTH + V_MOON, 0.0]), MASS_MOON)
+    ])
+
+    final_t = YEAR
+    baseline_dt = 30 * MINUTE
+    dt_list = np.array([12 * HOUR, DAY, DAY * 7, DAY * 11,  DAY * 14])
+
+    for name, (method, fe_steps) in {"ab4": (ab4, 3)}.items():
+        baseline = ivp(initial, final_t, baseline_dt, method, festeps=fe_steps)
+
+        errs = []
+        for dt in dt_list:
+            final = ivp(initial, final_t, dt, method, festeps=fe_steps)
+
+            err = np.linalg.norm(final[-1].bodies[1].r - baseline[-1].bodies[1].r) / np.linalg.norm(baseline[-1].bodies[1].r)
+            errs.append(err)
+        print(f"{name} done")
+
+        plt.scatter(np.array(dt_list) / HOUR, np.array(errs)**(1/4), label=name)
+
+    plt.legend()
+    plt.title("Error Convergence")
+    plt.xlabel("dt (hours)")
+    plt.ylabel(r"$error^\frac{1}{4}$")
     plt.show()
 
 
@@ -159,6 +189,7 @@ def test_method(method):
     err = np.linalg.norm(final[-1].bodies[1].r - correct_pos) / np.linalg.norm(correct_pos)
 
     plt.scatter([state.bodies[1].r[0] for state in final], [state.bodies[1].r[1] for state in final])
+    plt.gca().set_aspect('equal')
     plt.show()
 
     return err
@@ -181,6 +212,8 @@ SELECTED_NAVSTARS = {
 
 
 def main():
+    # test_convergence_ab4()
+
     # print("ab3 error:", test_method(ab3))
     # print("ab4 error:", test_method(ab4))
 
@@ -204,9 +237,8 @@ def main():
                 added[satellite["name"]] = len(initial.bodies) - 1
 
     final = ivp(initial, DAY * 5, MINUTE, ab3, festeps=2, verbose=True)
-    fig = plt.figure()
+    fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(projection="3d")
-
     final = final[::max(len(final)//1000, 1)]
 
     earth = added["Earth"]
@@ -216,20 +248,13 @@ def main():
             [state.bodies[sat].r[0] - state.bodies[earth].r[0] for state in final],
             [state.bodies[sat].r[1] - state.bodies[earth].r[1] for state in final],
             [state.bodies[sat].r[2] - state.bodies[earth].r[2] for state in final],
-            marker=',', s=1
+            marker=',', s=1, label=name
         )
-    # ax.scatter(
-    #     [state.bodies[2].r[0] - state.bodies[1].r[0] for state in final],
-    #     [state.bodies[2].r[1] - state.bodies[1].r[1] for state in final],
-    #     [state.bodies[2].r[2] - state.bodies[1].r[2] for state in final],
-    #     # linewidths=0,
-    #     marker=',', s=1, c="gray"
-    # )
-
 
     limits = np.r_[ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()]
     limits = [np.min(limits, axis=0), np.max(limits, axis=0)]
     ax.set(xlim3d=limits, ylim3d=limits, zlim3d=limits, box_aspect=(1, 1, 1))
+    fig.legend()
     plt.show()
 
 
