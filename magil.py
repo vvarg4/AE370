@@ -1,4 +1,5 @@
 import json
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -236,7 +237,9 @@ def main():
                 ))
                 added[satellite["name"]] = len(initial.bodies) - 1
 
-    final = ivp(initial, DAY * 5, MINUTE, ab3, festeps=2, verbose=True)
+    start = time.time()
+    final = ivp(initial, DAY * 5, 60 * SECOND, ab4, festeps=3, verbose=True)
+    print(f"\nTook {time.time() - start:.2f} seconds")
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(projection="3d")
     final = final[::max(len(final)//1000, 1)]
@@ -254,7 +257,7 @@ def main():
     limits = np.r_[ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()]
     limits = [np.min(limits, axis=0), np.max(limits, axis=0)]
     ax.set(xlim3d=limits, ylim3d=limits, zlim3d=limits, box_aspect=(1, 1, 1))
-    fig.legend()
+    # fig.legend()
     plt.show()
 
 
