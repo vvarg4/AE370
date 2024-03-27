@@ -189,18 +189,10 @@ def main():
         Body(np.array([R_EARTH, 0.0, 0.0]), np.array([0.0, V_EARTH, 0.0]), MASS_EARTH),
         Body(np.array([R_EARTH + R_MOON, 0.0, 0.0]), np.array([0.0, V_EARTH + V_MOON, 0.0]), MASS_MOON)
     ])
-    added = {}
+    added = {"Sun": 0, "Earth": 1, "Moon": 2}
     with open("satellites.json", "r") as satellites:
         satellites = json.load(satellites)
         for satellite in satellites:
-            # position = np.array(satellite["position"], dtype=float)
-            # velocity = np.array(satellite["velocity"], dtype=float)
-            # initial.bodies.append(Body(
-            #     np.array([R_EARTH, 0.0, 0.0]) + position * 1000,
-            #     np.array([0.0, V_EARTH, 0.0]) + velocity * 1000,
-            #     1.0
-            # ))
-            # added[satellite["name"]] = len(initial.bodies) - 1
             if satellite["name"] in SELECTED_NAVSTARS:
                 position = np.array(satellite["position"], dtype=float)
                 velocity = np.array(satellite["velocity"], dtype=float)
@@ -217,18 +209,13 @@ def main():
 
     final = final[::max(len(final)//1000, 1)]
 
-    ax.scatter(
-        [state.bodies[1].r[0] - state.bodies[1].r[0] for state in final],
-        [state.bodies[1].r[1] - state.bodies[1].r[1] for state in final],
-        [state.bodies[1].r[2] - state.bodies[1].r[2] for state in final],
-        marker=',', s=1, c="blue"
-    )
-    for name in added.keys():
+    earth = added["Earth"]
+    for name in set(added.keys()) - {"Sun", "Moon"}:
         sat = added[name]
         ax.scatter(
-            [state.bodies[sat].r[0] - state.bodies[1].r[0] for state in final],
-            [state.bodies[sat].r[1] - state.bodies[1].r[1] for state in final],
-            [state.bodies[sat].r[2] - state.bodies[1].r[2] for state in final],
+            [state.bodies[sat].r[0] - state.bodies[earth].r[0] for state in final],
+            [state.bodies[sat].r[1] - state.bodies[earth].r[1] for state in final],
+            [state.bodies[sat].r[2] - state.bodies[earth].r[2] for state in final],
             marker=',', s=1
         )
     # ax.scatter(
