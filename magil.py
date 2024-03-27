@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from typing import Callable
 
@@ -34,7 +35,7 @@ class State:
 
 def accel(bodies: list[Body], index: int) -> np.array:
     this = bodies[index]
-    force = np.array([0.0, 0.0])
+    force = np.array([0.0, 0.0, 0.0])
     for other in bodies:
         if other is not this:
             force += G * this.m * other.m * (other.r - this.r) / np.linalg.norm(other.r - this.r) ** 3.0
@@ -73,98 +74,69 @@ def ab3(states: list[State], dt: float) -> State:
     state = State(last.time + dt, bodies)
     return state
 
-def rk4(states: list[State], dt: float) -> State:
+def ab4(states: list[State], dt: float) -> State:
     last = states[-1]
+    second_last = states[-2]
+    third_last = states[-3]
+    fourth_last = states[-4]
 
     bodies = []
     for i in range(len(last.bodies)):
         this = last.bodies[i]
+        second = second_last.bodies[i]
+        third = third_last.bodies[i]
+        fourth = fourth_last.bodies[i]
 
-        k1v = accel(last.bodies, i)
-        k1r = this.v
-
-        k2v = accel([Body(other.r + k1r * (dt / 2), other.v + k1v * (dt / 2), other.m) for other in last.bodies], i)
-        k2r = this.v + k1v * (dt / 2)
-
-        k3v = accel([Body(other.r + k2r * (dt / 2), other.v + k2v * (dt / 2), other.m) for other in last.bodies], i)
-        k3r = this.v + k2v * (dt / 2)
-
-        k4v = accel([Body(other.r + k3r * dt, other.v + k3v * dt, other.m) for other in last.bodies], i)
-        k4r = this.v + k3v * dt
-
-        predicted_v = this.v + (dt/6) * (k1v + 2 * k2v + 2 * k3v + k4v)
-        predicted_r = this.r + (dt/6) * (k1r + 2 * k2r + 2 * k3r + k4r)
-
+        predicted_r = this.r + dt * (55/24 * this.v - 59/24 * second.v + 37/24 * third.v - 9/24 * fourth.v)
+        predicted_v = this.v + dt * (55/24 * accel(last.bodies, i) -
+                                     59/24 * accel(second_last.bodies, i) +
+                                     37/24 * accel(third_last.bodies, i) -
+                                     9/24 * accel(fourth_last.bodies, i))
         bodies.append(Body(predicted_r, predicted_v, this.m))
 
     state = State(last.time + dt, bodies)
     return state
 
-# def ivp_rk4(states: list[State], T: float, dt: float) -> tuple[np.array, np.array]:
-#     last = states[-1]
-#
-#     num_steps = int(T/dt) + 1
-#
-#     times = np.linspace(0, T, num_steps)
-#     positions = np.array([body.r for body in last.bodies]).reshape(1,len(last.bodies) * len(last.bodies[-1].r))
-#
-#     for i in range(num_steps - 1):
-#         next_state = rk4(states, dt)
-#         states.append(next_state)
-#
-#         bodies_positions = next_state.bodies[0].r
-#         for i in range(1, len(next_state.bodies)):
-#             bodies_positions = np.block([[bodies_positions, next_state.bodies[i].r]])
-#         positions = np.block([[positions], [bodies_positions]])
-#
-#     return positions, times
-
-# def rk4_error(states: list[State], T: float, dt: float, dt_baseline: float) -> float:
-#
-#     positions, _ = ivp_rk4(states, T, dt)
-#     positions_baselines, _ = ivp_rk4(states, T, dt_baseline)
-#
-#     err = np.linalg.norm(positions[-1] - positions_baselines[-1])/np.linalg.norm(positions_baselines[-1])
-#
-#     return err
-
-
-def ivp(initial: State, final_t: float, dt: float, method: Callable[[list[State], float], State], festeps: int = 0) -> State:
+def ivp(initial: State, final_t: float, dt: float, method: Callable[[list[State], float], State], festeps: int = 0, verbose: bool = False) -> list[State]:
     states = [initial]
     for _ in range(festeps):
         states.append(forward_euler(states, dt))
 
+    i = 0
     t = 0.0
     while t < final_t:
         this_step = min(final_t - t, dt)
         next_state = method(states, this_step)
         states.append(next_state)
         t += this_step
+        if verbose and i % 100 == 0:
+            print(f"\r{t/final_t*100:.2f}%", end="", flush=True)
+        i += 1
 
-    return states[-1]
+    return states
 
 
-def main():
+def test_convergence():
     initial = State(0.0, [
-        Body(np.array([0, 0.0]), np.array([0.0, 0.0]), MASS_SUN),
-        Body(np.array([R_EARTH, 0.0]), np.array([0.0, V_EARTH]), MASS_EARTH),
-        Body(np.array([R_EARTH + R_MOON, 0.0]), np.array([0.0, V_EARTH + V_MOON]), MASS_MOON)
+        Body(np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0]), MASS_SUN),
+        Body(np.array([R_EARTH, 0.0, 0.0]), np.array([0.0, V_EARTH, 0.0]), MASS_EARTH),
+        Body(np.array([R_EARTH + R_MOON, 0.0, 0.0]), np.array([0.0, V_EARTH + V_MOON, 0.0]), MASS_MOON)
     ])
 
     final_t = YEAR
     baseline_dt = 30 * MINUTE
     dt_list = np.array([HOUR, 12 * HOUR, DAY, DAY * 3, DAY * 7, DAY * 14])
 
-    for name, (method, fe_steps) in {"ab3": (ab3, 2), "fe": (forward_euler, 0), "rk4": (rk4, 0)}.items():
+    for name, (method, fe_steps) in {"ab3": (ab3, 2), "ab4": (ab4, 3), "fe": (forward_euler, 0)}.items():
         baseline = ivp(initial, final_t, baseline_dt, method, festeps=fe_steps)
 
         errs = []
         for dt in dt_list:
             final = ivp(initial, final_t, dt, method, festeps=fe_steps)
 
-            err = np.linalg.norm(final.bodies[1].r - baseline.bodies[1].r) / np.linalg.norm(baseline.bodies[1].r)
+            err = np.linalg.norm(final[-1].bodies[1].r - baseline[-1].bodies[1].r) / np.linalg.norm(baseline[-1].bodies[1].r)
             errs.append(err)
-            print(f"{dt}: {err}")
+        print(f"{name} done")
 
         plt.plot(np.array(dt_list) / HOUR, np.array(errs), label=name)
 
@@ -172,6 +144,105 @@ def main():
     plt.title("Error Convergence")
     plt.xlabel("dt (hours)")
     plt.ylabel("error")
+    plt.show()
+
+
+def test_method(method):
+    initial = State(0.0, [
+        Body(np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0]), MASS_SUN),
+        Body(np.array([R_EARTH, 0.0, 0.0]), np.array([0.0, V_EARTH, 0.0]), MASS_EARTH),
+    ])
+
+    final = ivp(initial, YEAR, 20 * MINUTE, method, festeps=3)
+
+    correct_pos = np.array([R_EARTH, 0.0, 0.0])
+    err = np.linalg.norm(final[-1].bodies[1].r - correct_pos) / np.linalg.norm(correct_pos)
+
+    plt.scatter([state.bodies[1].r[0] for state in final], [state.bodies[1].r[1] for state in final])
+    plt.show()
+
+    return err
+
+SELECTED_NAVSTARS = {
+    "NAVSTAR 62 (USA 201)",
+    "NAVSTAR 63 (USA 203)",
+    "NAVSTAR 64 (USA 206)",
+    "NAVSTAR 65 (USA 213)",
+    "NAVSTAR 67 (USA 239)",
+    "NAVSTAR 68 (USA 242)",
+    "NAVSTAR 69 (USA 248)",
+    "NAVSTAR 70 (USA 251)",
+    "NAVSTAR 71 (USA 256)",
+    "NAVSTAR 72 (USA 258)",
+    "NAVSTAR 73 (USA 260)",
+    "NAVSTAR 74 (USA 262)",
+    "NAVSTAR 75 (USA 265)",
+}
+
+
+def main():
+    # print("ab3 error:", test_method(ab3))
+    # print("ab4 error:", test_method(ab4))
+
+    initial = State(0.0, [
+        Body(np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0]), MASS_SUN),
+        Body(np.array([R_EARTH, 0.0, 0.0]), np.array([0.0, V_EARTH, 0.0]), MASS_EARTH),
+        Body(np.array([R_EARTH + R_MOON, 0.0, 0.0]), np.array([0.0, V_EARTH + V_MOON, 0.0]), MASS_MOON)
+    ])
+    added = {}
+    with open("satellites.json", "r") as satellites:
+        satellites = json.load(satellites)
+        for satellite in satellites:
+            # position = np.array(satellite["position"], dtype=float)
+            # velocity = np.array(satellite["velocity"], dtype=float)
+            # initial.bodies.append(Body(
+            #     np.array([R_EARTH, 0.0, 0.0]) + position * 1000,
+            #     np.array([0.0, V_EARTH, 0.0]) + velocity * 1000,
+            #     1.0
+            # ))
+            # added[satellite["name"]] = len(initial.bodies) - 1
+            if satellite["name"] in SELECTED_NAVSTARS:
+                position = np.array(satellite["position"], dtype=float)
+                velocity = np.array(satellite["velocity"], dtype=float)
+                initial.bodies.append(Body(
+                    np.array([R_EARTH, 0.0, 0.0]) + position * 1000,
+                    np.array([0.0, V_EARTH, 0.0]) + velocity * 1000,
+                    1.0
+                ))
+                added[satellite["name"]] = len(initial.bodies) - 1
+
+    final = ivp(initial, DAY * 5, MINUTE, ab3, festeps=2, verbose=True)
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+
+    final = final[::max(len(final)//1000, 1)]
+
+    ax.scatter(
+        [state.bodies[1].r[0] - state.bodies[1].r[0] for state in final],
+        [state.bodies[1].r[1] - state.bodies[1].r[1] for state in final],
+        [state.bodies[1].r[2] - state.bodies[1].r[2] for state in final],
+        marker=',', s=1, c="blue"
+    )
+    for name in added.keys():
+        sat = added[name]
+        ax.scatter(
+            [state.bodies[sat].r[0] - state.bodies[1].r[0] for state in final],
+            [state.bodies[sat].r[1] - state.bodies[1].r[1] for state in final],
+            [state.bodies[sat].r[2] - state.bodies[1].r[2] for state in final],
+            marker=',', s=1
+        )
+    # ax.scatter(
+    #     [state.bodies[2].r[0] - state.bodies[1].r[0] for state in final],
+    #     [state.bodies[2].r[1] - state.bodies[1].r[1] for state in final],
+    #     [state.bodies[2].r[2] - state.bodies[1].r[2] for state in final],
+    #     # linewidths=0,
+    #     marker=',', s=1, c="gray"
+    # )
+
+
+    limits = np.r_[ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d()]
+    limits = [np.min(limits, axis=0), np.max(limits, axis=0)]
+    ax.set(xlim3d=limits, ylim3d=limits, zlim3d=limits, box_aspect=(1, 1, 1))
     plt.show()
 
 
